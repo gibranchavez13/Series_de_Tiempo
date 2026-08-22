@@ -1,0 +1,114 @@
+---
+title: "Mi primer documento de Quarto"
+format: html
+---
+
+```{r}
+library(tidyverse) # Paquetería para manipulación de datos
+library(fpp3) # Paquetería para series de tiempo
+```
+
+## Introducción
+
+**negritas**
+
+*cursiva*
+
+`CTRL + SHIFT + I` para insertar código
+`CTRL + SHIFT + ENTER` para ejecutar todo el código
+`CTRL + ENTER` para ejecutar el código seleccionado
+`CTRL + SHIFT + M` para insertar un *pipe*
+
+`dplyr` tiene una función llamada `filter()`, que oculta la función del mismo nombre de la paquetería `stats`. Si quisiera usar la función, tendría que escribirse así:
+
+```{r}
+#| eval: false
+
+stats::filter() 
+```
+
+También puedo usar funciones de paqueterías que no  estén cargadas en el entorno escribirndo la paquetería antes de la función:
+
+```{r}
+#| eval: false
+
+readxl::read_excel() 
+```
+
+```{r}
+tourism
+```
+
+Para conocer cuál variable es `index`, puedo usar un `index_var()`:
+
+```{r}
+index_var(tourism)
+```
+
+
+```{r}
+key_vars(tourism)
+```
+
+```{r}
+key_data(tourism)
+```
+
+```{r}
+distinct(tourism, State)
+```
+
+¿Qué regiones hay en Tasmania?
+
+```{r}
+distinct(
+    filter(tourism, State == "Tasmania"), 
+    Region
+    )
+```
+
+OR -> `|`
+AND -> `&`ç
+= -> `<-`
+
+¿Cómo calculo los viajes promedio en la costa este de Tasmania?
+
+```{r}
+tourism |> 
+    filter(
+        State == "Tasmania", 
+        Region == "East Coast"
+    ) |> 
+    as_tibble() |>
+    group_by(
+        Purpose
+    ) |>
+    summarise(
+        mean_trips = mean(Trips)
+    )
+```
+
+Graficar los viajes en la costa este de Tasmania:
+
+```{r}
+tourism |> 
+    filter(
+        State == "Tasmania", 
+        Region == "East Coast"
+    ) |>
+    autoplot(Trips) + 
+    facet_wrap(
+        vars(Purpose), 
+        scale = 'free_y'
+    ) + 
+    theme_minimal() +
+    theme(
+        legend.position = 'none'
+    ) + 
+    labs(
+        title = 'Viajes por propósito en la costa este de Tasmania',
+        subtitle = 'Australia',
+        y = 'Viajes (miles)',
+        caption = 'Datos de la paquetería `fpp3`'
+    ) 
+```
