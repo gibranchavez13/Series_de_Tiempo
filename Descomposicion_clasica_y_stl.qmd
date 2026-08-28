@@ -1,0 +1,89 @@
+---
+title: "Descomposición clásica y STL"
+format: html
+---
+
+Importamos las librerías para trabajar:
+```{r}
+library(tidyverse)
+library(fpp3)
+```
+
+Importamos los datos:
+
+```{r}
+medicinas <- read_csv("medicinas.csv") |> 
+    select(-Month) # El signo menos indica que no queremos la columna Month
+
+medicinas
+```
+
+Cuando importamos una tabla, esta es una `tibble`, y cuando trabajamos con series de tiempo requerimos que sea una `tsibble`. La convertimos con la función `as_tsibble()`:
+
+```{r}
+medicinas_tsb <- medicinas |> 
+  as_tsibble(index = fecha) |> 
+  mutate(
+    fecha = yearmonth(fecha)
+  )
+
+medicinas_tsb
+```
+Graficamos la serie:
+
+```{r}
+medicinas_tsb |> 
+    autoplot(Cost)
+```
+
+## Descomposición 
+
+### Descomposición clásica
+
+#### Aditiva
+```{r}
+medicinas_tsb |> 
+    model(
+        clasica = classical_decomposition(
+            Cost, type = 'additive'
+        )
+    ) |> 
+        components() |> 
+        autoplot()
+```
+
+#### Aditiva + Logaritmo
+```{r}
+medicinas_tsb |> 
+    model(
+        clasica = classical_decomposition(
+            log(Cost), type = 'additive'
+        )
+    ) |> 
+        components() |> 
+        autoplot()
+```
+#### Multiplicativa
+```{r}
+medicinas_tsb |> 
+    model(
+        clasica = classical_decomposition(
+            Cost, type = 'multiplicative'
+        )
+    ) |> 
+        components() |> 
+        autoplot()
+```
+### Descomposición STL
+```{r}
+medicinas_tsb |> 
+    model(
+        stl = STL(
+            Cost ~ trend(window = NULL) + season(window = 'periodic'),
+            # Poner NULL es como quitar ese parámetro
+            robust = TRUE 
+        ) # Virgulilla 
+    ) |> 
+        components() |> 
+        autoplot()
+```
