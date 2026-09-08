@@ -1,0 +1,262 @@
+---
+title: "Ejercicio de Pronóstico"
+subtitle: "Importaciones de EEUU de autos mexicanos"
+author: "Gibrán Leonardo Chávez González"
+date: 2026-09-11
+format: 
+    html:
+        embed-resources: true
+---
+
+Importamos las librerías con las que vamos a trabajar:
+```{r}
+library(tidyverse)
+library(fpp3)
+```
+
+Definimos la serie de tiempo de importaciones de autos mexicanos a EEUU, que se encuentra en la base de datos FRED (Federal Reserve Economic Data) con el código MAUINSA. La serie contiene datos mensuales desde 1933 hasta 2025.
+```{r}
+imports <- tidyquant::tq_get(
+    x = 'MAUINSA',
+    get = 'economic.data',
+    from = '1933-01-01',
+    to = '2025-10-01'
+) |> 
+    mutate(
+        date = yearmonth(date)
+    ) |> 
+        as_tsibble(index = date)
+```
+
+Vemos cuál es la estructura de la serie de tiempo:
+```{r}
+imports
+```
+
+Ahora, graficamos la serie de tiempo:
+```{r}
+imports |> 
+    autoplot(price)
+```
+
+Queremos pronosticar los próximos 14 meses, por lo tanto, haremos un train-test split donde se dejarán los últimos 14 meses para testear el modelo. Para esto, definimos la variable de `train` y de `test`, además del horizonte:
+```{r}
+h <- 14
+
+df_train <- imports |> 
+    slice_head(n = nrow(imports) - h)
+
+df_test <- imports |> 
+    slice_tail(n = h)
+```
+
+Ahora, volvemos a graficar, pero esta vez únicamente el conjunto de entrenamiento:
+```{r}
+df_train |> 
+    autoplot(price)
+```
+
+A simple vista, no se observa una tendencia clara, pero sí se puede notar cierta estacionalidad en los datos. Para analizar mejor la serie, podemos descomponerla en sus componentes de tendencia, estacionalidad y ruido. Para este caso, usaremos el método STL:
+```{r}
+componentes_train <- df_train |> 
+    model(
+        stl = STL(
+            price ~ trend(window = 25) + season(window = 'periodic'),
+            robust = TRUE 
+        ) 
+    ) |> 
+        components() 
+```
+
+Ahora graficamos cada componente:
+```{r}
+componentes_train |> 
+    autoplot() 
+```
+
+
+Ya vemos más claramente de lo que hablamos, la serie tiene una estacionalidad marcada y un componente de tendencia que parece ser creciente.
+
+Ahora procederemos a estimar con 4 modelos, los cuales son:
+
+    - Mean
+    - Naive
+    - Seasonal Naive
+    - Drift
+
+Para ello, podemos intentar dos formas, primero entrenamos cada modelo independientemente, y segundo, entrenar cada componente con el modelo que resulte más conveniente. En este caso, para el componente de tendencia, podemos usar el modelo `Drift`, mientras que para la estacionalidad podemos usar el modelo `Seasonal Naive`. Para el componente de ruido, podemos usar el modelo `Mean`, ya que no tiene tendencia ni estacionalidad.
+```{r}
+descomposition <- decomposition_model(
+    STL(
+        price ~ trend(window = 25) + season(window = "periodic"),
+        robust = TRUE
+    ),
+    RW(season_adjust ~ drift()),
+    SNAIVE(season_year)
+)
+
+df_fit <- df_train |> 
+    model(
+        media = MEAN(price),
+        naive = NAIVE(price),
+        snaive = SNAIVE(price),
+        drift = RW(price ~ drift()),
+        desc = descomposition
+    )
+```
+
+La serie pronosticada se obtiene mediante:
+
+$$
+\widehat{y}_{t+h\mid t}
+=
+\widehat{T}_{t+h\mid t}
++
+\widehat{S}_{t+h\mid t}
++
+\widehat{R}_{t+h\mid t},
+$$
+
+donde:
+
+- $\widehat{T}_{t+h\mid t}$ es la tendencia pronosticada;
+- $\widehat{S}_{t+h\mid t}$ es la estacionalidad pronosticada;
+- $\widehat{R}_{t+h\mid t}$ es el residuo pronosticado.
+
+Ahora, vemos los residuos en cada modelo:
+```{r}
+for (model in colnames(df_fit)) {
+    residuos <- df_fit |> 
+        select(all_of(model)) |> 
+        gg_tsresiduals() + labs(title = model)
+
+    print(residuos)
+}
+```
+
+
+Ahora, hacemos el pronóstico y evaluamos:
+```{r}
+df_fc <- df_fit |> 
+    forecast(h = nrow(df_test))
+
+df_fc |>
+  accuracy(df_test)
+```
+
+Después, graficamos para ver como es nuestro pronóstico en comparación con los datos de test:
+```{r}
+df_fc |>
+    autoplot(df_train) +
+    autolayer(
+        df_test,
+        price,
+        colour = 'red'
+    ) + labs(title = 'Pronóstico mediante componentes')
+```
+
+Repitamos el proceso, pero haciendo una transformación logarítmica, para ver si podemos mejorar. Primero ploteamos la serie, después modelamos y vemos residuos:
+
+```{r}
+df_train |> 
+    autoplot(log(price))
+```
+
+Descomponemos la serie y lo ploteamos:
+```{r}
+componentes_train <- df_train |> 
+    model(
+        stl = STL(
+            log(price) ~ trend(window = 25) + season(window = 'periodic'),
+            robust = TRUE 
+        ) 
+    ) |> 
+        components() 
+
+componentes_train |> 
+    autoplot()
+```
+
+Armamos los modelos y ploteamos residuos de cada uno:
+
+```{r}
+descomposition_log <- decomposition_model(
+    STL(
+        log(price) ~ trend(window = 25) + season(window = "periodic"),
+        robust = TRUE
+    ),
+    RW(season_adjust ~ drift()),
+    SNAIVE(season_year)
+)
+
+df_fit <- df_train |> 
+    model(
+        media = MEAN(log(price)),
+        naive = NAIVE(log(price)),
+        snaive = SNAIVE(log(price)),
+        drift = RW(log(price) ~ drift()),
+        desc = descomposition_log
+    )
+
+for (model in colnames(df_fit)) {
+    residuos <- df_fit |> 
+        select(all_of(model)) |> 
+        gg_tsresiduals() + labs(title = model) 
+
+    print(residuos)
+}
+```
+
+
+Ahora, hacemos el pronóstico y evaluamos:
+```{r}
+df_fc <- df_fit |> 
+    forecast(h = nrow(df_test))
+
+df_fc |>
+  accuracy(df_test)
+```
+
+Después, graficamos para ver como es nuestro pronóstico en comparación con los datos de test:
+```{r}
+df_fc |>
+    autoplot(df_train) +
+    autolayer(
+        df_test,
+        price,
+        colour = 'red'
+    ) + labs(title = 'Pronóstico mediante componentes (transformación logarítmica)')
+```
+
+Ahora, entrenamos el modelo, pero ya con todos los datos para hacer nuestro pronóstico de 14 meses hacia el futuro, por criterio, lo mejor es hacer la trasnformación, ya que los residuos se ven con menor varianza y menor autocoreelación, las métricas mejoraron considerablemente. Además, combinaremos modelos para la predicción:
+```{r}
+df_fit_final <- imports |>
+    model(
+        combinado = decomposition_model(
+            STL(
+                log(price) ~ trend(window = 25) + season(window = 'periodic'),
+                robust = TRUE
+        ),
+        RW(trend ~ drift()),
+        SNAIVE(season_year),
+        MEAN(remainder)
+    ) 
+  )
+```
+
+```{r}
+df_fc_final <- df_fit_final |> 
+    forecast(h = 14)
+```
+
+```{r}
+df_fc_final |>
+    autoplot(
+        imports, 
+        level = c(80, 95)
+    ) +
+    labs(
+        title = 'Pronóstico a 14 meses'
+    )
+```
+```
