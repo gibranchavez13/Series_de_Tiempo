@@ -1,0 +1,444 @@
+---
+title: "Ejercicio de Pronóstico"
+subtitle: "Importaciones de EEUU de autos mexicanos"
+author: "Gibrán Leonardo Chávez González"
+date: 2026-09-11
+format:
+    html:
+        embed-resources: true
+        toc: true
+        toc-depth: 2
+---
+
+Importamos las librerías con las que vamos a trabajar:
+```{r}
+library(tidyverse)
+library(fpp3)
+```
+
+Definimos la serie de tiempo de importaciones de autos mexicanos a EEUU, que se
+encuentra en la base de datos FRED (Federal Reserve Economic Data) con el código
+`MAUINSA` (*Mexican Auto Imports*, miles de unidades, sin ajuste estacional,
+fuente: U.S. Bureau of Economic Analysis). La serie es mensual y comienza en
+enero de 1993; pedimos los datos desde una fecha anterior para traer todo el
+histórico disponible.
+```{r}
+imports <- tidyquant::tq_get(
+    x = 'MAUINSA',
+    get = 'economic.data',
+    from = '1990-01-01',
+    to = '2025-10-01'
+) |>
+    mutate(
+        date = yearmonth(date)
+    ) |>
+        as_tsibble(index = date)
+```
+
+Vemos cuál es la estructura de la serie de tiempo, incluida la primera y la
+última observación disponibles:
+```{r}
+imports
+
+imports |>
+    filter(date == min(date) | date == max(date))
+```
+
+Ahora, graficamos la serie de tiempo:
+```{r}
+imports |>
+    autoplot(price)
+```
+
+## Elección de la transformación
+
+Antes de modelar conviene decidir si trabajamos con la serie en niveles o
+transformada. En la gráfica anterior se observa que:
+
+- El nivel de la serie ha crecido de forma importante desde 1993, con una caída
+  fuerte en 2008-2009, otra en 2020 (pandemia) y un repunte marcado al final de
+  la muestra.
+- La variación de corto plazo (ruido) tiende a ser mayor cuando la serie está en
+  niveles altos; una descomposición aditiva sobre la serie en niveles dejaría
+  un residuo con varianza no constante.
+
+La transformación logarítmica ayuda porque **estabiliza la varianza del término
+de error** y convierte una estructura multiplicativa en aditiva, que es el
+supuesto de los métodos que vamos a usar. Además tiene una ventaja de
+interpretación: **una diferencia en escala logarítmica equivale a un cambio
+porcentual en la escala original**, lo cual es natural para volúmenes de
+importación, y garantiza que los intervalos de predicción, al revertirse, sean
+positivos (las importaciones no pueden ser negativas).
+
+El logaritmo es el caso particular $\lambda = 0$ de la familia Box-Cox.
+Verificamos que es una elección razonable con el criterio de Guerrero:
+```{r}
+imports |>
+    features(price, features = guerrero)
+```
+
+Comparamos visualmente ambas escalas:
+```{r}
+imports |> autoplot(price) + labs(title = 'Serie en niveles')
+imports |> autoplot(log(price)) + labs(title = 'Serie en escala logarítmica')
+```
+
+Si `lambda_guerrero` está cerca de 0, el logaritmo es una transformación Box-Cox
+adecuada y, por ser la más interpretable, es la que usaremos. Más adelante
+confirmamos su utilidad comparando métricas de error y residuos con y sin
+transformación.
+
+## Preparación del ejercicio
+
+Queremos pronosticar los próximos 14 meses (hasta diciembre de 2026), por lo
+tanto, haremos un train-test split donde se dejarán los últimos 14 meses para
+testear el modelo. Para esto, definimos la variable de `train` y de `test`,
+además del horizonte:
+```{r}
+h <- 14
+
+df_train <- imports |>
+    slice_head(n = nrow(imports) - h)
+
+df_test <- imports |>
+    slice_tail(n = h)
+```
+
+Ahora, volvemos a graficar, pero esta vez únicamente el conjunto de entrenamiento:
+```{r}
+df_train |>
+    autoplot(price)
+```
+
+A simple vista, la serie muestra un nivel que cambia en el tiempo (sube hasta
+mediados de la década de 2010, baja y vuelve a subir) más que una tendencia
+lineal única, y una estacionalidad mensual clara. Para analizar mejor la serie,
+podemos descomponerla en sus componentes de tendencia, estacionalidad y ruido.
+Para este caso, usaremos el método STL:
+```{r}
+componentes_train <- df_train |>
+    model(
+        stl = STL(
+            price ~ trend(window = 25) + season(window = 'periodic'),
+            robust = TRUE
+        )
+    ) |>
+        components()
+```
+
+Ahora graficamos cada componente:
+```{r}
+componentes_train |>
+    autoplot()
+```
+
+Se ve con claridad la estacionalidad mensual (de amplitud casi constante) y un
+componente de tendencia-ciclo que no es monótono: crece hasta ~2015, decae y
+repunta. La barra gris del panel `season_year` es mucho más pequeña que la de
+`trend`, por lo que la estacionalidad, aunque marcada, aporta menos variación
+que el movimiento de nivel.
+
+Ahora procederemos a estimar con 4 modelos de referencia (*benchmarks*), los
+cuales son:
+
+- Mean
+- Naive
+- Seasonal Naive
+- Drift
+
+Para ello, podemos intentar dos formas: primero entrenamos cada modelo
+independientemente y, segundo, entrenamos cada componente de la descomposición
+con el modelo que resulte más conveniente. En la descomposición modelamos la
+serie **desestacionalizada** (`season_adjust`, es decir, tendencia + ruido) con
+`RW` con *drift* para capturar el movimiento de nivel, y la **estacionalidad**
+(`season_year`) con `Seasonal Naive`:
+```{r}
+descomposition <- decomposition_model(
+    STL(
+        price ~ trend(window = 25) + season(window = "periodic"),
+        robust = TRUE
+    ),
+    RW(season_adjust ~ drift()),
+    SNAIVE(season_year)
+)
+
+df_fit <- df_train |>
+    model(
+        media = MEAN(price),
+        naive = NAIVE(price),
+        snaive = SNAIVE(price),
+        drift = RW(price ~ drift()),
+        desc = descomposition
+    )
+```
+
+La serie pronosticada mediante la descomposición se obtiene como:
+
+$$
+\widehat{y}_{t+h\mid t}
+=
+\widehat{A}_{t+h\mid t}
++
+\widehat{S}_{t+h\mid t},
+$$
+
+donde $\widehat{A}_{t+h\mid t}$ es el pronóstico de la serie desestacionalizada
+(`season_adjust`, que ya incluye tendencia y ruido) y $\widehat{S}_{t+h\mid t}$
+es la estacionalidad pronosticada.
+
+Ahora, vemos los residuos en cada modelo:
+```{r}
+for (m in colnames(df_fit)) {
+    residuos <- df_fit |>
+        select(all_of(m)) |>
+        gg_tsresiduals() + labs(title = m)
+
+    print(residuos)
+}
+```
+
+Aplicamos además el test de Ljung-Box sobre los residuos de innovación (rezago
+24) para contrastar formalmente la hipótesis de ruido blanco:
+```{r}
+df_fit |>
+    augment() |>
+    features(.innov, ljung_box, lag = 24)
+```
+
+Ahora, hacemos el pronóstico y evaluamos. Pasamos la serie completa a
+`accuracy()` para que pueda emparejar los índices y calcular las métricas
+escaladas (`MASE`, `RMSSE`):
+```{r}
+df_fc <- df_fit |>
+    forecast(h = nrow(df_test))
+
+df_fc |>
+    accuracy(imports) |>
+    arrange(RMSSE)
+```
+
+Después, graficamos para ver cómo es nuestro pronóstico en comparación con los
+datos de test:
+```{r}
+df_fc |>
+    autoplot(df_train) +
+    autolayer(
+        df_test,
+        price,
+        colour = 'red'
+    ) + labs(title = 'Pronóstico mediante componentes')
+```
+
+En niveles, ningún modelo pasa el test de Ljung-Box (p-values muy pequeños): los
+residuos del modelo de descomposición conservan autocorrelación significativa en
+el rezago 1 y algo de estructura estacional. El mejor *benchmark* individual por
+error es `snaive`, pero su MAPE ronda el 22%.
+
+## Repetición con transformación logarítmica
+
+Repitamos el proceso, pero haciendo una transformación logarítmica, para ver si
+podemos mejorar. Primero ploteamos la serie, después modelamos y vemos residuos:
+
+```{r}
+df_train |>
+    autoplot(log(price))
+```
+
+Descomponemos la serie y lo ploteamos:
+```{r}
+componentes_train <- df_train |>
+    model(
+        stl = STL(
+            log(price) ~ trend(window = 25) + season(window = 'periodic'),
+            robust = TRUE
+        )
+    ) |>
+        components()
+
+componentes_train |>
+    autoplot()
+```
+
+Armamos los modelos y ploteamos residuos de cada uno:
+
+```{r}
+#| warning: false
+descomposition_log <- decomposition_model(
+    STL(
+        log(price) ~ trend(window = 25) + season(window = "periodic"),
+        robust = TRUE
+    ),
+    RW(season_adjust ~ drift()),
+    SNAIVE(season_year)
+)
+
+df_fit <- df_train |>
+    model(
+        media = MEAN(log(price)),
+        naive = NAIVE(log(price)),
+        snaive = SNAIVE(log(price)),
+        drift = RW(log(price) ~ drift()),
+        desc = descomposition_log
+    )
+
+for (m in colnames(df_fit)) {
+    residuos <- df_fit |>
+        select(all_of(m)) |>
+        gg_tsresiduals() + labs(title = m)
+
+    print(residuos)
+}
+```
+
+Test de Ljung-Box con la transformación:
+```{r}
+df_fit |>
+    augment() |>
+    features(.innov, ljung_box, lag = 24)
+```
+
+Ahora, hacemos el pronóstico y evaluamos:
+```{r}
+df_fc <- df_fit |>
+    forecast(h = nrow(df_test))
+
+df_fc |>
+    accuracy(imports) |>
+    arrange(RMSSE)
+```
+
+Después, graficamos para ver cómo es nuestro pronóstico en comparación con los
+datos de test:
+```{r}
+df_fc |>
+    autoplot(df_train) +
+    autolayer(
+        df_test,
+        price,
+        colour = 'red'
+    ) + labs(title = 'Pronóstico mediante componentes (transformación logarítmica)')
+```
+
+Con la transformación:
+
+- El error del modelo de descomposición se reduce aproximadamente a la mitad
+  (RMSE y MAPE) frente a la versión en niveles, y la autocorrelación de sus
+  residuos en el rezago 1 baja de forma notable.
+- Los modelos `drift` y `naive` obtienen un RMSE puntual algo menor que `desc`
+  en esta ventana de test, **pero no son modelos válidos para esta serie**: al
+  ignorar la estacionalidad, dejan una autocorrelación enorme en los rezagos 12
+  y 24, y sus intervalos de predicción, al revertir el logaritmo, se disparan a
+  valores no creíbles a 14 meses.
+- Entre los modelos que sí capturan la estacionalidad, el de descomposición
+  sobre `log(price)` es el de menor error y con residuos más cercanos a ruido
+  blanco (aunque, como muestra el test de Ljung-Box, todavía no del todo).
+
+Por lo anterior, seleccionamos el **modelo de descomposición STL sobre
+`log(price)`** para el pronóstico final.
+
+## Pronóstico final
+
+Entrenamos el modelo elegido con **todos los datos** para hacer el pronóstico de
+14 meses hacia el futuro. Usamos exactamente la misma especificación que
+evaluamos en el conjunto de prueba:
+```{r}
+df_fit_final <- imports |>
+    model(
+        desc_log = decomposition_model(
+            STL(
+                log(price) ~ trend(window = 25) + season(window = 'periodic'),
+                robust = TRUE
+            ),
+            RW(season_adjust ~ drift()),
+            SNAIVE(season_year)
+        )
+    )
+```
+
+```{r}
+df_fc_final <- df_fit_final |>
+    forecast(h = 14)
+```
+
+`fable` aplica y revierte la transformación automáticamente. El pronóstico
+puntual que reporta por defecto es la **mediana** de la distribución; también
+podemos ver la **media** (ajustada por sesgo), que es la que minimiza el error
+cuadrático:
+```{r}
+df_fc_final |>
+    as_tibble() |>
+    transmute(
+        date,
+        mediana = median(price),
+        media = .mean
+    )
+```
+
+```{r}
+df_fc_final |>
+    autoplot(
+        imports,
+        level = c(80, 95)
+    ) +
+    labs(
+        title = 'Pronóstico a 14 meses',
+        y = 'Miles de unidades'
+    )
+```
+
+## Conclusiones
+
+**Modelo elegido.** La serie de importaciones de autos mexicanos a EEUU presenta
+(i) un nivel que cambia en el tiempo —crece hasta mediados de la década de 2010,
+decae y repunta al final de la muestra—, (ii) una estacionalidad mensual marcada
+y de amplitud aproximadamente constante en escala logarítmica, y (iii) quiebres
+puntuales asociados a la crisis de 2008-2009 y a la pandemia de 2020. Dado el
+objetivo (pronóstico a 14 meses), se eligió un **modelo de descomposición STL
+sobre `log(price)`**, que modela por separado la serie desestacionalizada con
+`RW` con *drift* (recoge el movimiento de nivel) y la estacionalidad con
+`SNAIVE`. Frente a los cuatro *benchmarks* individuales, es el único que captura
+simultáneamente nivel y estacionalidad.
+
+**Justificación de la transformación logarítmica.** No se adopta porque la
+amplitud estacional crezca con el nivel (la descomposición muestra que es casi
+constante), sino porque: (a) estabiliza la varianza del término de error, que en
+niveles es mayor cuando la serie está alta; (b) hace interpretables los cambios
+como porcentajes y mantiene positivos los intervalos revertidos; (c) el criterio
+de Guerrero arroja un $\lambda$ cercano a 0; y (d) empíricamente, reduce el
+error del modelo de descomposición en el conjunto de prueba aproximadamente a la
+mitad (RMSE y MAPE) y baja la autocorrelación residual en el rezago 1.
+
+**Evaluación.** En el *test* (últimos 14 meses), el modelo de descomposición con
+log es el de menor error entre los modelos que capturan estacionalidad. Los
+modelos `drift` y `naive` lograron un RMSE puntual algo menor, pero se
+descartaron porque sus residuos muestran autocorrelación fuerte en los rezagos
+12 y 24 (no modelan la estacionalidad) y sus intervalos de predicción crecen sin
+control al revertir el logaritmo; su ligera ventaja puntual es un artefacto de
+que la ventana de prueba fue relativamente plana.
+
+**Diagnóstico de residuos.** Aun con la transformación, los residuos del modelo
+elegido conservan autocorrelación significativa en los rezagos 1-2 y colas
+pesadas por los shocks de 2008 y 2020; el test de Ljung-Box rechaza la hipótesis
+de ruido blanco. Es decir, **queda estructura sin capturar**: los intervalos de
+predicción por teoría normal probablemente subestiman la incertidumbre y sería
+preferible complementarlos con intervalos *bootstrap*.
+
+**Lectura del pronóstico.** El pronóstico a diciembre de 2026 proyecta la
+continuidad del patrón estacional mensual sobre un nivel en torno al observado
+recientemente, con un intervalo del 95% amplio y asimétrico (más largo hacia
+arriba, por efecto de revertir el logaritmo). La proyección extrapola el fuerte
+repunte del cierre de la muestra, por lo que es sensible a ese último tramo: si
+el repunte fue transitorio, el pronóstico queda sesgado al alza.
+
+**Limitaciones y siguientes pasos.**
+
+- Los modelos de referencia no incorporan información externa (aranceles,
+  T-MEC, ciclo económico de EEUU) ni manejan quiebres estructurales.
+- `RW` con *drift* supone que la pendiente reciente se mantiene 14 meses; la
+  ventana de tendencia del STL (`window = 25`) es flexible, lo que hace que el
+  *drift* dependa bastante del final de la serie.
+- La evaluación se hizo con un único *train/test split*; una validación cruzada
+  de series de tiempo (`stretch_tsibble`) daría una estimación más robusta del
+  error.
+- La autocorrelación residual restante justifica pasar a modelos ETS/ARIMA
+  (Módulo 2), tomando esta descomposición como línea base a superar.
