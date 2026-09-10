@@ -2513,7 +2513,9 @@ window.Quarto = {
 - Naive
 - Seasonal Naive
 - Drift</code></pre>
-<p>Para ello, podemos intentar dos formas, primero entrenamos cada modelo independientemente, y segundo, entrenar cada componente con el modelo que resulte más conveniente. En este caso, para el componente de tendencia, podemos usar el modelo <code>Drift</code>, mientras que para la estacionalidad podemos usar el modelo <code>Seasonal Naive</code>. Para el componente de ruido, podemos usar el modelo <code>Mean</code>, ya que no tiene tendencia ni estacionalidad.</p>
+<section id="sin-transformación" class="level2">
+<h2 class="anchored" data-anchor-id="sin-transformación">Sin transformación</h2>
+<p>Para ello, podemos intentar dos formas, primero entrenamos cada modelo independientemente, y segundo, entrenamos cada componente con el modelo que resulte más conveniente. En este caso, para el componente de tendencia, podemos usar el modelo <code>Drift</code>, mientras que para la estacionalidad podemos usar el modelo <code>Seasonal Naive</code>. Para el componente de ruido, podemos usar el modelo <code>Mean</code>, ya que no tiene tendencia ni estacionalidad.</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>descomposition <span class="ot">&lt;-</span> <span class="fu">decomposition_model</span>(</span>
 <span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">STL</span>(</span>
@@ -2658,13 +2660,29 @@ window.Quarto = {
 </div>
 </div>
 </div>
+<p>Aplicamos además el test de Ljung-Box sobre los residuos de innovación para contrastar formalmente la hipótesis de ruido blanco:</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb33"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a>df_fit <span class="sc">|&gt;</span></span>
+<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">augment</span>() <span class="sc">|&gt;</span></span>
+<span id="cb33-3"><a href="#cb33-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">features</span>(.innov, ljung_box, <span class="at">lag =</span> <span class="dv">24</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 5 × 3
+  .model lb_stat lb_pvalue
+  &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt;
+1 desc      195.         0
+2 drift     699.         0
+3 media    4303.         0
+4 naive     699.         0
+5 snaive    351.         0</code></pre>
+</div>
+</div>
 <p>Ahora, hacemos el pronóstico y evaluamos:</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb33"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a>df_fc <span class="ot">&lt;-</span> df_fit <span class="sc">|&gt;</span> </span>
-<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">forecast</span>(<span class="at">h =</span> <span class="fu">nrow</span>(df_test))</span>
-<span id="cb33-3"><a href="#cb33-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-4"><a href="#cb33-4" aria-hidden="true" tabindex="-1"></a>df_fc <span class="sc">|&gt;</span></span>
-<span id="cb33-5"><a href="#cb33-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">accuracy</span>(df_test)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb35"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a>df_fc <span class="ot">&lt;-</span> df_fit <span class="sc">|&gt;</span> </span>
+<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">forecast</span>(<span class="at">h =</span> <span class="fu">nrow</span>(df_test))</span>
+<span id="cb35-3"><a href="#cb35-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-4"><a href="#cb35-4" aria-hidden="true" tabindex="-1"></a>df_fc <span class="sc">|&gt;</span></span>
+<span id="cb35-5"><a href="#cb35-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">accuracy</span>(df_test)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code># A tibble: 5 × 10
   .model .type    ME  RMSE   MAE   MPE  MAPE  MASE RMSSE  ACF1
@@ -2678,13 +2696,13 @@ window.Quarto = {
 </div>
 <p>Después, graficamos para ver como es nuestro pronóstico en comparación con los datos de test:</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb35"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a>df_fc <span class="sc">|&gt;</span></span>
-<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">autoplot</span>(df_train) <span class="sc">+</span></span>
-<span id="cb35-3"><a href="#cb35-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">autolayer</span>(</span>
-<span id="cb35-4"><a href="#cb35-4" aria-hidden="true" tabindex="-1"></a>        df_test,</span>
-<span id="cb35-5"><a href="#cb35-5" aria-hidden="true" tabindex="-1"></a>        price,</span>
-<span id="cb35-6"><a href="#cb35-6" aria-hidden="true" tabindex="-1"></a>        <span class="at">colour =</span> <span class="st">&#39;red&#39;</span></span>
-<span id="cb35-7"><a href="#cb35-7" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">+</span> <span class="fu">labs</span>(<span class="at">title =</span> <span class="st">&#39;Pronóstico mediante componentes&#39;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb37"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a>df_fc <span class="sc">|&gt;</span></span>
+<span id="cb37-2"><a href="#cb37-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">autoplot</span>(df_train) <span class="sc">+</span></span>
+<span id="cb37-3"><a href="#cb37-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">autolayer</span>(</span>
+<span id="cb37-4"><a href="#cb37-4" aria-hidden="true" tabindex="-1"></a>        df_test,</span>
+<span id="cb37-5"><a href="#cb37-5" aria-hidden="true" tabindex="-1"></a>        price,</span>
+<span id="cb37-6"><a href="#cb37-6" aria-hidden="true" tabindex="-1"></a>        <span class="at">colour =</span> <span class="st">&#39;red&#39;</span></span>
+<span id="cb37-7"><a href="#cb37-7" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">+</span> <span class="fu">labs</span>(<span class="at">title =</span> <span class="st">&#39;Pronóstico mediante componentes&#39;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
@@ -2693,10 +2711,14 @@ window.Quarto = {
 </div>
 </div>
 </div>
+<p>En niveles, ningún modelo pasa el test de Ljung-Box (p-values muy pequeños): los residuos del modelo de descomposición conservan autocorrelación significativa en el rezago 1 y algo de estructura estacional. El mejor <em>benchmark</em> individual por error es <code>snaive</code>, pero su MAPE ronda el 22%.</p>
+</section>
+<section id="repetición-con-transformación-logarítmica" class="level2">
+<h2 class="anchored" data-anchor-id="repetición-con-transformación-logarítmica">Repetición con transformación logarítmica</h2>
 <p>Repitamos el proceso, pero haciendo una transformación logarítmica, para ver si podemos mejorar. Primero ploteamos la serie, después modelamos y vemos residuos:</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a>df_train <span class="sc">|&gt;</span> </span>
-<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">autoplot</span>(<span class="fu">log</span>(price))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb38"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a>df_train <span class="sc">|&gt;</span> </span>
+<span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">autoplot</span>(<span class="fu">log</span>(price))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
@@ -2707,17 +2729,17 @@ window.Quarto = {
 </div>
 <p>Descomponemos la serie y lo ploteamos:</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb37"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a>componentes_train <span class="ot">&lt;-</span> df_train <span class="sc">|&gt;</span> </span>
-<span id="cb37-2"><a href="#cb37-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">model</span>(</span>
-<span id="cb37-3"><a href="#cb37-3" aria-hidden="true" tabindex="-1"></a>        <span class="at">stl =</span> <span class="fu">STL</span>(</span>
-<span id="cb37-4"><a href="#cb37-4" aria-hidden="true" tabindex="-1"></a>            <span class="fu">log</span>(price) <span class="sc">~</span> <span class="fu">trend</span>(<span class="at">window =</span> <span class="dv">25</span>) <span class="sc">+</span> <span class="fu">season</span>(<span class="at">window =</span> <span class="st">&#39;periodic&#39;</span>),</span>
-<span id="cb37-5"><a href="#cb37-5" aria-hidden="true" tabindex="-1"></a>            <span class="at">robust =</span> <span class="cn">TRUE</span> </span>
-<span id="cb37-6"><a href="#cb37-6" aria-hidden="true" tabindex="-1"></a>        ) </span>
-<span id="cb37-7"><a href="#cb37-7" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">|&gt;</span> </span>
-<span id="cb37-8"><a href="#cb37-8" aria-hidden="true" tabindex="-1"></a>        <span class="fu">components</span>() </span>
-<span id="cb37-9"><a href="#cb37-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb37-10"><a href="#cb37-10" aria-hidden="true" tabindex="-1"></a>componentes_train <span class="sc">|&gt;</span> </span>
-<span id="cb37-11"><a href="#cb37-11" aria-hidden="true" tabindex="-1"></a>    <span class="fu">autoplot</span>()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb39"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a>componentes_train <span class="ot">&lt;-</span> df_train <span class="sc">|&gt;</span> </span>
+<span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">model</span>(</span>
+<span id="cb39-3"><a href="#cb39-3" aria-hidden="true" tabindex="-1"></a>        <span class="at">stl =</span> <span class="fu">STL</span>(</span>
+<span id="cb39-4"><a href="#cb39-4" aria-hidden="true" tabindex="-1"></a>            <span class="fu">log</span>(price) <span class="sc">~</span> <span class="fu">trend</span>(<span class="at">window =</span> <span class="dv">25</span>) <span class="sc">+</span> <span class="fu">season</span>(<span class="at">window =</span> <span class="st">&#39;periodic&#39;</span>),</span>
+<span id="cb39-5"><a href="#cb39-5" aria-hidden="true" tabindex="-1"></a>            <span class="at">robust =</span> <span class="cn">TRUE</span> </span>
+<span id="cb39-6"><a href="#cb39-6" aria-hidden="true" tabindex="-1"></a>        ) </span>
+<span id="cb39-7"><a href="#cb39-7" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">|&gt;</span> </span>
+<span id="cb39-8"><a href="#cb39-8" aria-hidden="true" tabindex="-1"></a>        <span class="fu">components</span>() </span>
+<span id="cb39-9"><a href="#cb39-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb39-10"><a href="#cb39-10" aria-hidden="true" tabindex="-1"></a>componentes_train <span class="sc">|&gt;</span> </span>
+<span id="cb39-11"><a href="#cb39-11" aria-hidden="true" tabindex="-1"></a>    <span class="fu">autoplot</span>()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
@@ -2728,31 +2750,31 @@ window.Quarto = {
 </div>
 <p>Armamos los modelos y ploteamos residuos de cada uno:</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb38"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a>descomposition_log <span class="ot">&lt;-</span> <span class="fu">decomposition_model</span>(</span>
-<span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">STL</span>(</span>
-<span id="cb38-3"><a href="#cb38-3" aria-hidden="true" tabindex="-1"></a>        <span class="fu">log</span>(price) <span class="sc">~</span> <span class="fu">trend</span>(<span class="at">window =</span> <span class="dv">25</span>) <span class="sc">+</span> <span class="fu">season</span>(<span class="at">window =</span> <span class="st">&quot;periodic&quot;</span>),</span>
-<span id="cb38-4"><a href="#cb38-4" aria-hidden="true" tabindex="-1"></a>        <span class="at">robust =</span> <span class="cn">TRUE</span></span>
-<span id="cb38-5"><a href="#cb38-5" aria-hidden="true" tabindex="-1"></a>    ),</span>
-<span id="cb38-6"><a href="#cb38-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">RW</span>(season_adjust <span class="sc">~</span> <span class="fu">drift</span>()),</span>
-<span id="cb38-7"><a href="#cb38-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">SNAIVE</span>(season_year)</span>
-<span id="cb38-8"><a href="#cb38-8" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb38-9"><a href="#cb38-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb38-10"><a href="#cb38-10" aria-hidden="true" tabindex="-1"></a>df_fit <span class="ot">&lt;-</span> df_train <span class="sc">|&gt;</span> </span>
-<span id="cb38-11"><a href="#cb38-11" aria-hidden="true" tabindex="-1"></a>    <span class="fu">model</span>(</span>
-<span id="cb38-12"><a href="#cb38-12" aria-hidden="true" tabindex="-1"></a>        <span class="at">media =</span> <span class="fu">MEAN</span>(<span class="fu">log</span>(price)),</span>
-<span id="cb38-13"><a href="#cb38-13" aria-hidden="true" tabindex="-1"></a>        <span class="at">naive =</span> <span class="fu">NAIVE</span>(<span class="fu">log</span>(price)),</span>
-<span id="cb38-14"><a href="#cb38-14" aria-hidden="true" tabindex="-1"></a>        <span class="at">snaive =</span> <span class="fu">SNAIVE</span>(<span class="fu">log</span>(price)),</span>
-<span id="cb38-15"><a href="#cb38-15" aria-hidden="true" tabindex="-1"></a>        <span class="at">drift =</span> <span class="fu">RW</span>(<span class="fu">log</span>(price) <span class="sc">~</span> <span class="fu">drift</span>()),</span>
-<span id="cb38-16"><a href="#cb38-16" aria-hidden="true" tabindex="-1"></a>        <span class="at">desc =</span> descomposition_log</span>
-<span id="cb38-17"><a href="#cb38-17" aria-hidden="true" tabindex="-1"></a>    )</span>
-<span id="cb38-18"><a href="#cb38-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb38-19"><a href="#cb38-19" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (model <span class="cf">in</span> <span class="fu">colnames</span>(df_fit)) {</span>
-<span id="cb38-20"><a href="#cb38-20" aria-hidden="true" tabindex="-1"></a>    residuos <span class="ot">&lt;-</span> df_fit <span class="sc">|&gt;</span> </span>
-<span id="cb38-21"><a href="#cb38-21" aria-hidden="true" tabindex="-1"></a>        <span class="fu">select</span>(<span class="fu">all_of</span>(model)) <span class="sc">|&gt;</span> </span>
-<span id="cb38-22"><a href="#cb38-22" aria-hidden="true" tabindex="-1"></a>        <span class="fu">gg_tsresiduals</span>() <span class="sc">+</span> <span class="fu">labs</span>(<span class="at">title =</span> model) </span>
-<span id="cb38-23"><a href="#cb38-23" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb38-24"><a href="#cb38-24" aria-hidden="true" tabindex="-1"></a>    <span class="fu">print</span>(residuos)</span>
-<span id="cb38-25"><a href="#cb38-25" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb40"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a>descomposition_log <span class="ot">&lt;-</span> <span class="fu">decomposition_model</span>(</span>
+<span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">STL</span>(</span>
+<span id="cb40-3"><a href="#cb40-3" aria-hidden="true" tabindex="-1"></a>        <span class="fu">log</span>(price) <span class="sc">~</span> <span class="fu">trend</span>(<span class="at">window =</span> <span class="dv">25</span>) <span class="sc">+</span> <span class="fu">season</span>(<span class="at">window =</span> <span class="st">&quot;periodic&quot;</span>),</span>
+<span id="cb40-4"><a href="#cb40-4" aria-hidden="true" tabindex="-1"></a>        <span class="at">robust =</span> <span class="cn">TRUE</span></span>
+<span id="cb40-5"><a href="#cb40-5" aria-hidden="true" tabindex="-1"></a>    ),</span>
+<span id="cb40-6"><a href="#cb40-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">RW</span>(season_adjust <span class="sc">~</span> <span class="fu">drift</span>()),</span>
+<span id="cb40-7"><a href="#cb40-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">SNAIVE</span>(season_year)</span>
+<span id="cb40-8"><a href="#cb40-8" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb40-9"><a href="#cb40-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb40-10"><a href="#cb40-10" aria-hidden="true" tabindex="-1"></a>df_fit <span class="ot">&lt;-</span> df_train <span class="sc">|&gt;</span> </span>
+<span id="cb40-11"><a href="#cb40-11" aria-hidden="true" tabindex="-1"></a>    <span class="fu">model</span>(</span>
+<span id="cb40-12"><a href="#cb40-12" aria-hidden="true" tabindex="-1"></a>        <span class="at">media =</span> <span class="fu">MEAN</span>(<span class="fu">log</span>(price)),</span>
+<span id="cb40-13"><a href="#cb40-13" aria-hidden="true" tabindex="-1"></a>        <span class="at">naive =</span> <span class="fu">NAIVE</span>(<span class="fu">log</span>(price)),</span>
+<span id="cb40-14"><a href="#cb40-14" aria-hidden="true" tabindex="-1"></a>        <span class="at">snaive =</span> <span class="fu">SNAIVE</span>(<span class="fu">log</span>(price)),</span>
+<span id="cb40-15"><a href="#cb40-15" aria-hidden="true" tabindex="-1"></a>        <span class="at">drift =</span> <span class="fu">RW</span>(<span class="fu">log</span>(price) <span class="sc">~</span> <span class="fu">drift</span>()),</span>
+<span id="cb40-16"><a href="#cb40-16" aria-hidden="true" tabindex="-1"></a>        <span class="at">desc =</span> descomposition_log</span>
+<span id="cb40-17"><a href="#cb40-17" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb40-18"><a href="#cb40-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb40-19"><a href="#cb40-19" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (model <span class="cf">in</span> <span class="fu">colnames</span>(df_fit)) {</span>
+<span id="cb40-20"><a href="#cb40-20" aria-hidden="true" tabindex="-1"></a>    residuos <span class="ot">&lt;-</span> df_fit <span class="sc">|&gt;</span> </span>
+<span id="cb40-21"><a href="#cb40-21" aria-hidden="true" tabindex="-1"></a>        <span class="fu">select</span>(<span class="fu">all_of</span>(model)) <span class="sc">|&gt;</span> </span>
+<span id="cb40-22"><a href="#cb40-22" aria-hidden="true" tabindex="-1"></a>        <span class="fu">gg_tsresiduals</span>() <span class="sc">+</span> <span class="fu">labs</span>(<span class="at">title =</span> model) </span>
+<span id="cb40-23"><a href="#cb40-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb40-24"><a href="#cb40-24" aria-hidden="true" tabindex="-1"></a>    <span class="fu">print</span>(residuos)</span>
+<span id="cb40-25"><a href="#cb40-25" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
@@ -2853,13 +2875,29 @@ window.Quarto = {
 </div>
 </div>
 </div>
+<p>Test de Ljung-Box con la transformación:</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb57"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb57-1"><a href="#cb57-1" aria-hidden="true" tabindex="-1"></a>df_fit <span class="sc">|&gt;</span></span>
+<span id="cb57-2"><a href="#cb57-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">augment</span>() <span class="sc">|&gt;</span></span>
+<span id="cb57-3"><a href="#cb57-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">features</span>(.innov, ljung_box, <span class="at">lag =</span> <span class="dv">24</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 5 × 3
+  .model lb_stat  lb_pvalue
+  &lt;chr&gt;    &lt;dbl&gt;      &lt;dbl&gt;
+1 desc      71.3 0.00000137
+2 drift    355.  0         
+3 media   3927.  0         
+4 naive    355.  0         
+5 snaive   395.  0         </code></pre>
+</div>
+</div>
 <p>Ahora, hacemos el pronóstico y evaluamos:</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb55"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb55-1"><a href="#cb55-1" aria-hidden="true" tabindex="-1"></a>df_fc <span class="ot">&lt;-</span> df_fit <span class="sc">|&gt;</span> </span>
-<span id="cb55-2"><a href="#cb55-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">forecast</span>(<span class="at">h =</span> <span class="fu">nrow</span>(df_test))</span>
-<span id="cb55-3"><a href="#cb55-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb55-4"><a href="#cb55-4" aria-hidden="true" tabindex="-1"></a>df_fc <span class="sc">|&gt;</span></span>
-<span id="cb55-5"><a href="#cb55-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">accuracy</span>(df_test)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb59"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb59-1"><a href="#cb59-1" aria-hidden="true" tabindex="-1"></a>df_fc <span class="ot">&lt;-</span> df_fit <span class="sc">|&gt;</span> </span>
+<span id="cb59-2"><a href="#cb59-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">forecast</span>(<span class="at">h =</span> <span class="fu">nrow</span>(df_test))</span>
+<span id="cb59-3"><a href="#cb59-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb59-4"><a href="#cb59-4" aria-hidden="true" tabindex="-1"></a>df_fc <span class="sc">|&gt;</span></span>
+<span id="cb59-5"><a href="#cb59-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">accuracy</span>(df_test)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code># A tibble: 5 × 10
   .model .type    ME  RMSE   MAE   MPE  MAPE  MASE RMSSE   ACF1
@@ -2873,13 +2911,13 @@ window.Quarto = {
 </div>
 <p>Después, graficamos para ver como es nuestro pronóstico en comparación con los datos de test:</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb57"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb57-1"><a href="#cb57-1" aria-hidden="true" tabindex="-1"></a>df_fc <span class="sc">|&gt;</span></span>
-<span id="cb57-2"><a href="#cb57-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">autoplot</span>(df_train) <span class="sc">+</span></span>
-<span id="cb57-3"><a href="#cb57-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">autolayer</span>(</span>
-<span id="cb57-4"><a href="#cb57-4" aria-hidden="true" tabindex="-1"></a>        df_test,</span>
-<span id="cb57-5"><a href="#cb57-5" aria-hidden="true" tabindex="-1"></a>        price,</span>
-<span id="cb57-6"><a href="#cb57-6" aria-hidden="true" tabindex="-1"></a>        <span class="at">colour =</span> <span class="st">&#39;red&#39;</span></span>
-<span id="cb57-7"><a href="#cb57-7" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">+</span> <span class="fu">labs</span>(<span class="at">title =</span> <span class="st">&#39;Pronóstico mediante componentes (transformación logarítmica)&#39;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb61"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb61-1"><a href="#cb61-1" aria-hidden="true" tabindex="-1"></a>df_fc <span class="sc">|&gt;</span></span>
+<span id="cb61-2"><a href="#cb61-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">autoplot</span>(df_train) <span class="sc">+</span></span>
+<span id="cb61-3"><a href="#cb61-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">autolayer</span>(</span>
+<span id="cb61-4"><a href="#cb61-4" aria-hidden="true" tabindex="-1"></a>        df_test,</span>
+<span id="cb61-5"><a href="#cb61-5" aria-hidden="true" tabindex="-1"></a>        price,</span>
+<span id="cb61-6"><a href="#cb61-6" aria-hidden="true" tabindex="-1"></a>        <span class="at">colour =</span> <span class="st">&#39;red&#39;</span></span>
+<span id="cb61-7"><a href="#cb61-7" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">+</span> <span class="fu">labs</span>(<span class="at">title =</span> <span class="st">&#39;Pronóstico mediante componentes (transformación logarítmica)&#39;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
@@ -2888,34 +2926,44 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<p>Ahora, entrenamos el modelo, pero ya con todos los datos para hacer nuestro pronóstico de 14 meses hacia el futuro, por criterio, lo mejor es hacer la trasnformación, ya que los residuos se ven con menor varianza y menor autocoreelación, las métricas mejoraron considerablemente. Además, combinaremos modelos para la predicción:</p>
+<p>Con la transformación:</p>
+<ul>
+<li>El error del modelo de descomposición se reduce aproximadamente a la mitad (RMSE y MAPE) frente a la versión en niveles, y la autocorrelación de sus residuos en el rezago 1 baja de forma notable.</li>
+<li>Los modelos <code>drift</code> y <code>naive</code> obtienen un RMSE puntual algo menor que <code>desc</code> en esta ventana de test, pero no son modelos válidos para esta serie: al ignorar la estacionalidad, dejan una autocorrelación enorme en los rezagos 12 y 24, y sus intervalos de predicción, al revertir el logaritmo, se disparan a valores no creíbles a 14 meses.</li>
+<li>Entre los modelos que sí capturan la estacionalidad, el de descomposición sobre <code>log(price)</code> es el de menor error y con residuos más cercanos a ruido blanco (aunque, como muestra el test de Ljung-Box, todavía no del todo).</li>
+</ul>
+<p>Por lo anterior, seleccionamos el modelo de descomposición STL sobre <code>log(price)</code> para el pronóstico final.</p>
+</section>
+<section id="pronóstico-final" class="level2">
+<h2 class="anchored" data-anchor-id="pronóstico-final">Pronóstico final</h2>
+<p>Entrenamos el modelo elegido con <strong>todos los datos</strong> para hacer el pronóstico de 14 meses hacia el futuro. Usamos exactamente la misma especificación que evaluamos en el conjunto de prueba:</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb58"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb58-1"><a href="#cb58-1" aria-hidden="true" tabindex="-1"></a>df_fit_final <span class="ot">&lt;-</span> imports <span class="sc">|&gt;</span></span>
-<span id="cb58-2"><a href="#cb58-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">model</span>(</span>
-<span id="cb58-3"><a href="#cb58-3" aria-hidden="true" tabindex="-1"></a>        <span class="at">combinado =</span> <span class="fu">decomposition_model</span>(</span>
-<span id="cb58-4"><a href="#cb58-4" aria-hidden="true" tabindex="-1"></a>            <span class="fu">STL</span>(</span>
-<span id="cb58-5"><a href="#cb58-5" aria-hidden="true" tabindex="-1"></a>                <span class="fu">log</span>(price) <span class="sc">~</span> <span class="fu">trend</span>(<span class="at">window =</span> <span class="dv">25</span>) <span class="sc">+</span> <span class="fu">season</span>(<span class="at">window =</span> <span class="st">&#39;periodic&#39;</span>),</span>
-<span id="cb58-6"><a href="#cb58-6" aria-hidden="true" tabindex="-1"></a>                <span class="at">robust =</span> <span class="cn">TRUE</span></span>
-<span id="cb58-7"><a href="#cb58-7" aria-hidden="true" tabindex="-1"></a>        ),</span>
-<span id="cb58-8"><a href="#cb58-8" aria-hidden="true" tabindex="-1"></a>        <span class="fu">RW</span>(trend <span class="sc">~</span> <span class="fu">drift</span>()),</span>
-<span id="cb58-9"><a href="#cb58-9" aria-hidden="true" tabindex="-1"></a>        <span class="fu">SNAIVE</span>(season_year),</span>
-<span id="cb58-10"><a href="#cb58-10" aria-hidden="true" tabindex="-1"></a>        <span class="fu">MEAN</span>(remainder)</span>
-<span id="cb58-11"><a href="#cb58-11" aria-hidden="true" tabindex="-1"></a>    ) </span>
-<span id="cb58-12"><a href="#cb58-12" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb62"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb62-1"><a href="#cb62-1" aria-hidden="true" tabindex="-1"></a>df_fit_final <span class="ot">&lt;-</span> imports <span class="sc">|&gt;</span></span>
+<span id="cb62-2"><a href="#cb62-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">model</span>(</span>
+<span id="cb62-3"><a href="#cb62-3" aria-hidden="true" tabindex="-1"></a>        <span class="at">combinado =</span> <span class="fu">decomposition_model</span>(</span>
+<span id="cb62-4"><a href="#cb62-4" aria-hidden="true" tabindex="-1"></a>            <span class="fu">STL</span>(</span>
+<span id="cb62-5"><a href="#cb62-5" aria-hidden="true" tabindex="-1"></a>                <span class="fu">log</span>(price) <span class="sc">~</span> <span class="fu">trend</span>(<span class="at">window =</span> <span class="dv">25</span>) <span class="sc">+</span> <span class="fu">season</span>(<span class="at">window =</span> <span class="st">&#39;periodic&#39;</span>),</span>
+<span id="cb62-6"><a href="#cb62-6" aria-hidden="true" tabindex="-1"></a>                <span class="at">robust =</span> <span class="cn">TRUE</span></span>
+<span id="cb62-7"><a href="#cb62-7" aria-hidden="true" tabindex="-1"></a>        ),</span>
+<span id="cb62-8"><a href="#cb62-8" aria-hidden="true" tabindex="-1"></a>        <span class="fu">RW</span>(trend <span class="sc">~</span> <span class="fu">drift</span>()),</span>
+<span id="cb62-9"><a href="#cb62-9" aria-hidden="true" tabindex="-1"></a>        <span class="fu">SNAIVE</span>(season_year),</span>
+<span id="cb62-10"><a href="#cb62-10" aria-hidden="true" tabindex="-1"></a>        <span class="fu">MEAN</span>(remainder)</span>
+<span id="cb62-11"><a href="#cb62-11" aria-hidden="true" tabindex="-1"></a>    ) </span>
+<span id="cb62-12"><a href="#cb62-12" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb59"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb59-1"><a href="#cb59-1" aria-hidden="true" tabindex="-1"></a>df_fc_final <span class="ot">&lt;-</span> df_fit_final <span class="sc">|&gt;</span> </span>
-<span id="cb59-2"><a href="#cb59-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">forecast</span>(<span class="at">h =</span> <span class="dv">14</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb63"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb63-1"><a href="#cb63-1" aria-hidden="true" tabindex="-1"></a>df_fc_final <span class="ot">&lt;-</span> df_fit_final <span class="sc">|&gt;</span> </span>
+<span id="cb63-2"><a href="#cb63-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">forecast</span>(<span class="at">h =</span> <span class="dv">14</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb60"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb60-1"><a href="#cb60-1" aria-hidden="true" tabindex="-1"></a>df_fc_final <span class="sc">|&gt;</span></span>
-<span id="cb60-2"><a href="#cb60-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">autoplot</span>(</span>
-<span id="cb60-3"><a href="#cb60-3" aria-hidden="true" tabindex="-1"></a>        imports, </span>
-<span id="cb60-4"><a href="#cb60-4" aria-hidden="true" tabindex="-1"></a>        <span class="at">level =</span> <span class="fu">c</span>(<span class="dv">80</span>, <span class="dv">95</span>)</span>
-<span id="cb60-5"><a href="#cb60-5" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">+</span></span>
-<span id="cb60-6"><a href="#cb60-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">labs</span>(</span>
-<span id="cb60-7"><a href="#cb60-7" aria-hidden="true" tabindex="-1"></a>        <span class="at">title =</span> <span class="st">&#39;Pronóstico a 14 meses&#39;</span></span>
-<span id="cb60-8"><a href="#cb60-8" aria-hidden="true" tabindex="-1"></a>    )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb64"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb64-1"><a href="#cb64-1" aria-hidden="true" tabindex="-1"></a>df_fc_final <span class="sc">|&gt;</span></span>
+<span id="cb64-2"><a href="#cb64-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">autoplot</span>(</span>
+<span id="cb64-3"><a href="#cb64-3" aria-hidden="true" tabindex="-1"></a>        imports, </span>
+<span id="cb64-4"><a href="#cb64-4" aria-hidden="true" tabindex="-1"></a>        <span class="at">level =</span> <span class="fu">c</span>(<span class="dv">80</span>, <span class="dv">95</span>)</span>
+<span id="cb64-5"><a href="#cb64-5" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">+</span></span>
+<span id="cb64-6"><a href="#cb64-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">labs</span>(</span>
+<span id="cb64-7"><a href="#cb64-7" aria-hidden="true" tabindex="-1"></a>        <span class="at">title =</span> <span class="st">&#39;Pronóstico a 14 meses&#39;</span></span>
+<span id="cb64-8"><a href="#cb64-8" aria-hidden="true" tabindex="-1"></a>    )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
@@ -2924,7 +2972,18 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<p>```</p>
+</section>
+<section id="conclusiones" class="level2">
+<h2 class="anchored" data-anchor-id="conclusiones">Conclusiones</h2>
+<p><strong>Modelo elegido</strong></p>
+<p>La serie de importaciones de autos mexicanos a EEUU presenta un nivel que cambia en el tiempo, crece hasta mediados de la década de 2010, decae y repunta al final de la muestra, una estacionalidad mensual marcada y de amplitud aproximadamente constante en escala logarítmica, y quiebres puntuales asociados a la crisis de 2008-2009 y a la pandemia de 2020. Dado el objetivo, se eligió un modelo de descomposición STL sobre <code>log(price)</code>, que modela por separado la serie desestacionalizada con <code>RW</code> con <em>drift</em> (recoge el movimiento de nivel) y la estacionalidad con <code>SNAIVE</code>. Frente a los cuatro <em>benchmarks</em> individuales, es el único que captura simultáneamente nivel y estacionalidad.</p>
+<p><strong>Evaluación</strong></p>
+<p>En el <em>test</em>, el modelo de descomposición con log es el de menor error entre los modelos que capturan estacionalidad. Los modelos <code>drift</code> y <code>naive</code> lograron un RMSE puntual algo menor, pero se descartaron porque sus residuos muestran autocorrelación fuerte en los rezagos 12 y 24 y sus intervalos de predicción crecen sin control al revertir el logaritmo; su ligera ventaja puntual es un artefacto de que la ventana de prueba fue relativamente plana.</p>
+<p><strong>Diagnóstico de residuos</strong></p>
+<p>Aun con la transformación, los residuos del modelo elegido conservan autocorrelación significativa en los rezagos 1-2 y colas pesadas por los shocks de 2008 y 2020; el test de Ljung-Box rechaza la hipótesis de ruido blanco. Es decir, queda estructura sin capturar: los intervalos de predicción por teoría normal probablemente subestiman la incertidumbre y sería preferible complementarlos con intervalos <em>bootstrap</em>.</p>
+<p><strong>Lectura del pronóstico</strong></p>
+<p>El pronóstico a diciembre de 2026 proyecta la continuidad del patrón estacional mensual sobre un nivel en torno al observado recientemente, con un intervalo del 95% amplio y asimétrico. La proyección extrapola el fuerte repunte del cierre de la muestra, por lo que es sensible a ese último tramo: si el repunte fue transitorio, el pronóstico queda sesgado al alza.</p>
+</section>
 
 </main>
 <!-- /main column -->

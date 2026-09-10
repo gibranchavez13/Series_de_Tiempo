@@ -84,7 +84,9 @@ Ahora procederemos a estimar con 4 modelos, los cuales son:
     - Seasonal Naive
     - Drift
 
-Para ello, podemos intentar dos formas, primero entrenamos cada modelo independientemente, y segundo, entrenar cada componente con el modelo que resulte más conveniente. En este caso, para el componente de tendencia, podemos usar el modelo `Drift`, mientras que para la estacionalidad podemos usar el modelo `Seasonal Naive`. Para el componente de ruido, podemos usar el modelo `Mean`, ya que no tiene tendencia ni estacionalidad.
+## Sin transformación
+
+Para ello, podemos intentar dos formas, primero entrenamos cada modelo independientemente, y segundo, entrenamos cada componente con el modelo que resulte más conveniente. En este caso, para el componente de tendencia, podemos usar el modelo `Drift`, mientras que para la estacionalidad podemos usar el modelo `Seasonal Naive`. Para el componente de ruido, podemos usar el modelo `Mean`, ya que no tiene tendencia ni estacionalidad.
 ```{r}
 descomposition <- decomposition_model(
     STL(
@@ -134,6 +136,13 @@ for (model in colnames(df_fit)) {
 }
 ```
 
+Aplicamos además el test de Ljung-Box sobre los residuos de innovación para contrastar formalmente la hipótesis de ruido blanco:
+
+```{r}
+df_fit |>
+    augment() |>
+    features(.innov, ljung_box, lag = 24)
+```
 
 Ahora, hacemos el pronóstico y evaluamos:
 ```{r}
@@ -154,6 +163,10 @@ df_fc |>
         colour = 'red'
     ) + labs(title = 'Pronóstico mediante componentes')
 ```
+
+En niveles, ningún modelo pasa el test de Ljung-Box (p-values muy pequeños): los residuos del modelo de descomposición conservan autocorrelación significativa en el rezago 1 y algo de estructura estacional. El mejor *benchmark* individual por error es `snaive`, pero su MAPE ronda el 22%.
+
+## Repetición con transformación logarítmica
 
 Repitamos el proceso, pero haciendo una transformación logarítmica, para ver si podemos mejorar. Primero ploteamos la serie, después modelamos y vemos residuos:
 
@@ -207,6 +220,12 @@ for (model in colnames(df_fit)) {
 }
 ```
 
+Test de Ljung-Box con la transformación:
+```{r}
+df_fit |>
+    augment() |>
+    features(.innov, ljung_box, lag = 24)
+```
 
 Ahora, hacemos el pronóstico y evaluamos:
 ```{r}
@@ -228,7 +247,28 @@ df_fc |>
     ) + labs(title = 'Pronóstico mediante componentes (transformación logarítmica)')
 ```
 
-Ahora, entrenamos el modelo, pero ya con todos los datos para hacer nuestro pronóstico de 14 meses hacia el futuro, por criterio, lo mejor es hacer la trasnformación, ya que los residuos se ven con menor varianza y menor autocoreelación, las métricas mejoraron considerablemente. Además, combinaremos modelos para la predicción:
+Con la transformación:
+
+- El error del modelo de descomposición se reduce aproximadamente a la mitad
+  (RMSE y MAPE) frente a la versión en niveles, y la autocorrelación de sus
+  residuos en el rezago 1 baja de forma notable.
+- Los modelos `drift` y `naive` obtienen un RMSE puntual algo menor que `desc`
+  en esta ventana de test, pero no son modelos válidos para esta serie: al
+  ignorar la estacionalidad, dejan una autocorrelación enorme en los rezagos 12
+  y 24, y sus intervalos de predicción, al revertir el logaritmo, se disparan a
+  valores no creíbles a 14 meses.
+- Entre los modelos que sí capturan la estacionalidad, el de descomposición
+  sobre `log(price)` es el de menor error y con residuos más cercanos a ruido
+  blanco (aunque, como muestra el test de Ljung-Box, todavía no del todo).
+
+Por lo anterior, seleccionamos el modelo de descomposición STL sobre
+`log(price)` para el pronóstico final.
+
+## Pronóstico final
+
+Entrenamos el modelo elegido con **todos los datos** para hacer el pronóstico de
+14 meses hacia el futuro. Usamos exactamente la misma especificación que
+evaluamos en el conjunto de prueba:
 ```{r}
 df_fit_final <- imports |>
     model(
@@ -259,4 +299,22 @@ df_fc_final |>
         title = 'Pronóstico a 14 meses'
     )
 ```
-```
+
+## Conclusiones
+
+**Modelo elegido** 
+
+La serie de importaciones de autos mexicanos a EEUU presenta un nivel que cambia en el tiempo, crece hasta mediados de la década de 2010, decae y repunta al final de la muestra, una estacionalidad mensual marcada y de amplitud aproximadamente constante en escala logarítmica, y quiebres puntuales asociados a la crisis de 2008-2009 y a la pandemia de 2020. Dado el objetivo, se eligió un modelo de descomposición STL sobre `log(price)`, que modela por separado la serie desestacionalizada con `RW` con *drift* (recoge el movimiento de nivel) y la estacionalidad con `SNAIVE`. Frente a los cuatro *benchmarks* individuales, es el único que captura simultáneamente nivel y estacionalidad.
+
+
+**Evaluación** 
+
+En el *test*, el modelo de descomposición con log es el de menor error entre los modelos que capturan estacionalidad. Los modelos `drift` y `naive` lograron un RMSE puntual algo menor, pero se descartaron porque sus residuos muestran autocorrelación fuerte en los rezagos 12 y 24 y sus intervalos de predicción crecen sin control al revertir el logaritmo; su ligera ventaja puntual es un artefacto de que la ventana de prueba fue relativamente plana.
+
+**Diagnóstico de residuos** 
+
+Aun con la transformación, los residuos del modelo elegido conservan autocorrelación significativa en los rezagos 1-2 y colas pesadas por los shocks de 2008 y 2020; el test de Ljung-Box rechaza la hipótesis de ruido blanco. Es decir, queda estructura sin capturar: los intervalos de predicción por teoría normal probablemente subestiman la incertidumbre y sería preferible complementarlos con intervalos *bootstrap*.
+
+**Lectura del pronóstico** 
+
+El pronóstico a diciembre de 2026 proyecta la continuidad del patrón estacional mensual sobre un nivel en torno al observado recientemente, con un intervalo del 95% amplio y asimétrico. La proyección extrapola el fuerte repunte del cierre de la muestra, por lo que es sensible a ese último tramo: si el repunte fue transitorio, el pronóstico queda sesgado al alza.
