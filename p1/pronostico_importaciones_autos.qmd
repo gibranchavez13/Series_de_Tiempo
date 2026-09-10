@@ -19,7 +19,7 @@ Definimos la serie de tiempo de importaciones de autos mexicanos a EEUU, que se 
 imports <- tidyquant::tq_get(
     x = 'MAUINSA',
     get = 'economic.data',
-    from = '1933-01-01',
+    from = '1993-01-01',
     to = '2025-10-01'
 ) |> 
     mutate(
